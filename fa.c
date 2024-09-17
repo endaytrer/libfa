@@ -218,7 +218,7 @@ static int totalize(struct fa *fa);
 #define FA_DOT_DIR "FA_DOT_DIR"
 
 ATTRIBUTE_UNUSED
-static void fa_dot_debug(struct fa *fa, const char *tag) {
+static void fa_dot_debug(const struct fa *fa, const char *tag) {
     const char *dot_dir;
     static int count = 0;
     int r;
@@ -243,7 +243,7 @@ static void fa_dot_debug(struct fa *fa, const char *tag) {
     free(fname);
 }
 
-static void print_char_set(struct re *set) {
+static void print_char_set(const struct re *set) {
     int from, to;
 
     if (set->negate)
@@ -268,7 +268,7 @@ static void print_char_set(struct re *set) {
 }
 
 ATTRIBUTE_UNUSED
-static void print_re(struct re *re) {
+static void print_re(const struct re *re) {
     switch(re->type) {
     case UNION:
         print_re(re->exp1);
@@ -370,7 +370,7 @@ static struct state *make_state(void) {
     return s;
 }
 
-static struct state *add_state(struct fa *fa, int accept) {
+struct state *fa_add_state(struct fa *fa, int accept) {
     struct state *s = make_state();
     if (s) {
         s->accept = accept;
@@ -416,7 +416,7 @@ static int add_new_trans(struct state *from, struct state *to,
 
 ATTRIBUTE_RETURN_CHECK
 static int add_epsilon_trans(struct state *from,
-                             struct state *to) {
+                             const struct state *to) {
     int r;
     from->accept |= to->accept;
     for_each_trans(t, to) {
@@ -649,7 +649,7 @@ static struct state *state_set_pop_data(struct state_set *set, void **d) {
     return s;
 }
 
-static void *state_set_find_data(struct state_set *set, struct state *s) {
+static void *state_set_find_data(const struct state_set *set, const struct state *s) {
     int i = state_set_index(set, s);
     if (i >= 0)
         return set->data[i];
@@ -712,8 +712,8 @@ static int state_pair_push(struct state_set **set,
 /* Return the index of the pair (FST, SND) in SET, or -1 if SET contains no
    such pair.
  */
-static int state_pair_find(struct state_set *set, struct state *fst,
-                           struct state *snd) {
+static int state_pair_find(const struct state_set *set, const struct state *fst,
+                           const struct state *snd) {
     for (int i=0; i < set->used; i++)
         if (set->states[i] == fst && set->data[i] == snd)
             return i;
@@ -942,7 +942,7 @@ static struct state_set *fa_reverse(struct fa *fa) {
     free(tused);
 
     /* Make new initial and final states */
-    struct state *s = add_state(fa, 0);
+    struct state *s = fa_add_state(fa, 0);
     E(s == NULL);
 
     fa->initial->accept = 1;
@@ -1003,7 +1003,7 @@ static uchar* start_points(struct fa *fa, int *npoints) {
  * Operations on STATE_SET_HASH
  */
 static int state_set_hash_contains(state_set_hash *smap,
-                               struct state_set *set) {
+                                   const struct state_set *set) {
     return hash_lookup(smap, set) != NULL;
 }
 
@@ -1023,7 +1023,7 @@ static struct state_set *state_set_hash_uniq(state_set_hash *smap,
 }
 
 static struct state *state_set_hash_get_state(state_set_hash *smap,
-                                             struct state_set *set) {
+                                              const struct state_set *set) {
     hnode_t *node = hash_lookup(smap, set);
     return (struct state *) hnode_get(node);
 }
@@ -1053,13 +1053,13 @@ static void set_destroy(hnode_t *node, ATTRIBUTE_UNUSED void *ctx) {
 
 ATTRIBUTE_RETURN_CHECK
 static int state_set_hash_add(state_set_hash **smap,
-                              struct state_set *set, struct fa *fa) {
+                              const struct state_set *set, struct fa *fa) {
     if (*smap == NULL) {
         *smap = hash_create(HASHCOUNT_T_MAX, set_cmp, set_hash);
         E(*smap == NULL);
         hash_set_allocator(*smap, NULL, set_destroy, NULL);
     }
-    struct state *s = add_state(fa, 0);
+    struct state *s = fa_add_state(fa, 0);
     E(s == NULL);
     F(hash_alloc_insert(*smap, set, s));
     return 0;
@@ -1068,7 +1068,7 @@ static int state_set_hash_add(state_set_hash **smap,
 }
 
 static void state_set_hash_free(state_set_hash *smap,
-                                struct state_set *protect) {
+                                const struct state_set *protect) {
     if (protect != NULL) {
         hnode_t *node = hash_lookup(smap, protect);
         hash_delete(smap, node);
@@ -1198,7 +1198,7 @@ static void collect_trans(struct fa *fa) {
     }
 }
 
-static void collect_dead_states(struct fa *fa) {
+static void collect_dead_states(const struct fa *fa) {
     /* Remove all dead states and free their storage */
     for (struct state *s = fa->initial; s->next != NULL; ) {
         if (! s->next->live) {
@@ -1323,7 +1323,7 @@ static int determinize(struct fa *fa, struct state_set *ini) {
  * reduced and ordered.
  */
 
-static struct state *step(struct state *s, uchar c) {
+static struct state *step(const struct state *s, uchar c) {
     for_each_trans(t, s) {
         if (t->min <= c && c <= t->max)
             return t->to;
@@ -1743,7 +1743,7 @@ static struct fa *fa_make_empty(void) {
 
     if (ALLOC(fa) < 0)
         return NULL;
-    if (add_state(fa, 0) == NULL) {
+    if (fa_add_state(fa, 0) == NULL) {
         fa_free(fa);
         return NULL;
     }
@@ -1772,7 +1772,7 @@ static struct fa *fa_make_char(uchar c) {
         return NULL;
 
     struct state *s = fa->initial;
-    struct state *t = add_state(fa, 1);
+    struct state *t = fa_add_state(fa, 1);
     int r;
 
     if (t == NULL)
@@ -1808,7 +1808,7 @@ struct fa *fa_make_basic(unsigned int basic) {
     return NULL;
 }
 
-int fa_is_basic(struct fa *fa, unsigned int basic) {
+int fa_is_basic(const struct fa *fa, unsigned int basic) {
     if (basic == FA_EMPTY) {
         return ! fa->initial->accept && fa->initial->tused == 0;
     } else if (basic == FA_EPSILON) {
@@ -1854,7 +1854,7 @@ static struct fa *fa_clone(struct fa *fa) {
         int i = state_set_push(set, s);
         E(i < 0);
 
-        struct state *q = add_state(result, s->accept);
+        struct state *q = fa_add_state(result, s->accept);
         if (q == NULL)
             goto error;
         set->data[i] = q;
@@ -1896,7 +1896,7 @@ static int union_in_place(struct fa *fa1, struct fa **fa2) {
             return -1;
     }
 
-    s = add_state(fa1, 0);
+    s = fa_add_state(fa1, 0);
     if (s == NULL)
         return -1;
     r = add_epsilon_trans(s, fa1->initial);
@@ -1977,13 +1977,13 @@ struct fa *fa_concat(struct fa *fa1, struct fa *fa2) {
     return NULL;
 }
 
-static struct fa *fa_make_char_set(bitset *cset, int negate) {
+static struct fa *fa_make_char_set(const bitset *cset, int negate) {
     struct fa *fa = fa_make_empty();
     if (!fa)
         return NULL;
 
     struct state *s = fa->initial;
-    struct state *t = add_state(fa, 1);
+    struct state *t = fa_add_state(fa, 1);
     int from = 0;
     int r;
 
@@ -2021,7 +2021,7 @@ static struct fa *fa_star(struct fa *fa) {
     if (fa == NULL)
         return NULL;
 
-    s = add_state(fa, 1);
+    s = fa_add_state(fa, 1);
     if (s == NULL)
         goto error;
 
@@ -2212,7 +2212,7 @@ struct fa *fa_intersect(struct fa *fa1, struct fa *fa2) {
                     struct state *r = state_triple_thd(newstates,
                                                        t1[n1].to, t2[n2].to);
                     if (r == NULL) {
-                        r = add_state(fa, 0);
+                        r = fa_add_state(fa, 0);
                         E(r == NULL);
                         F(state_set_push(worklist, t1[n1].to));
                         F(state_set_push(worklist, t2[n2].to));
@@ -2313,7 +2313,7 @@ int fa_contains(struct fa *fa1, struct fa *fa2) {
     goto done;
 }
 
-static int add_crash_trans(struct fa *fa, struct state *s, struct state *crash,
+static int add_crash_trans(const struct fa *fa, struct state *s, struct state *crash,
                            int min, int max) {
     int result;
 
@@ -2343,7 +2343,7 @@ static int add_crash_trans(struct fa *fa, struct state *s, struct state *crash,
 
 static int totalize(struct fa *fa) {
     int r;
-    struct state *crash = add_state(fa, 0);
+    struct state *crash = fa_add_state(fa, 0);
 
     E(crash == NULL);
     F(mark_reachable(fa));
@@ -2412,7 +2412,7 @@ struct fa *fa_minus(struct fa *fa1, struct fa *fa2) {
 
 static int accept_to_accept(struct fa *fa) {
     int r;
-    struct state *s = add_state(fa, 0);
+    struct state *s = fa_add_state(fa, 0);
     if (s == NULL)
         return -1;
 
@@ -2541,7 +2541,7 @@ static struct re_str *string_extend(struct re_str *dst,
     return dst;
 }
 
-static char pick_char(struct trans *t) {
+static char pick_char(const struct trans *t) {
     for (int c = t->min; c <= t->max; c++)
         if (isalpha(c)) return c;
     for (int c = t->min; c <= t->max; c++)
@@ -2632,7 +2632,7 @@ struct enum_intl {
     size_t    bsize;
 };
 
-static int fa_enumerate_intl(struct state *s, struct enum_intl *ei, int pos) {
+static int fa_enumerate_intl(const struct state *s, struct enum_intl *ei, int pos) {
     int result = -1;
 
     if (ei->bsize <= pos + 1) {
@@ -2730,7 +2730,7 @@ static struct fa *expand_alphabet(struct fa *fa, int add_marker,
         if (! p->reachable)
             continue;
 
-        struct state *r = add_state(fa, 0);
+        struct state *r = fa_add_state(fa, 0);
         if (r == NULL)
             goto error;
         r->trans = p->trans;
@@ -2742,7 +2742,7 @@ static struct fa *expand_alphabet(struct fa *fa, int add_marker,
         if (ret < 0)
             goto error;
         if (add_marker) {
-            struct state *q = add_state(fa, 0);
+            struct state *q = fa_add_state(fa, 0);
             ret = add_new_trans(p, q, Y, Y);
             if (ret < 0)
                 goto error;
@@ -2789,7 +2789,7 @@ static bitset *last_chars(struct fa *fa) {
     return bs;
 }
 
-static bitset *first_chars(struct fa *fa) {
+static bitset *first_chars(const struct fa *fa) {
     bitset *bs = bitset_init(UCHAR_NUM);
     struct state *s = fa->initial;
 
@@ -2995,7 +2995,7 @@ int fa_ambig_example(struct fa *fa1, struct fa *fa2,
 /*
  * Construct an fa from a regular expression
  */
-static struct fa *fa_from_re(struct re *re) {
+static struct fa *fa_from_re(const struct re *re) {
     struct fa *result = NULL;
 
     switch(re->type) {
@@ -3133,7 +3133,7 @@ int fa_nocase(struct fa *fa) {
     return -1;
 }
 
-int fa_is_nocase(struct fa *fa) {
+int fa_is_nocase(const struct fa *fa) {
     return fa->nocase;
 }
 
@@ -3220,7 +3220,7 @@ static struct re *make_re_char_set(bool negate, bool no_ranges) {
     return re;
 }
 
-static bool more(struct re_parse *parse) {
+static bool more(const struct re_parse *parse) {
     return parse->rx < parse->rend;
 }
 
@@ -3234,7 +3234,7 @@ static bool match(struct re_parse *parse, char m) {
     return false;
 }
 
-static bool peek(struct re_parse *parse, const char *chars) {
+static bool peek(const struct re_parse *parse, const char *chars) {
     return *parse->rx != '\0' && strchr(chars, *parse->rx) != NULL;
 }
 
@@ -3257,13 +3257,13 @@ static bool parse_char(struct re_parse *parse, int quoted, char *c) {
     }
 }
 
-static void add_re_char(struct re *re, uchar from, uchar to) {
+static void add_re_char(const struct re *re, uchar from, uchar to) {
     assert(re->type == CSET);
     for (unsigned int c = from; c <= to; c++)
         bitset_set(re->cset, c);
 }
 
-static void parse_char_class(struct re_parse *parse, struct re *re) {
+static void parse_char_class(struct re_parse *parse, const struct re *re) {
     if (! more(parse)) {
         parse->error = REG_EBRACK;
         goto error;
@@ -4149,7 +4149,7 @@ int fa_as_regexp(struct fa *fa, char **regexp, size_t *regexp_len) {
     if (eps == NULL)
         goto error;
 
-    fin = add_state(fa,1);
+    fin = fa_add_state(fa,1);
     if (fin == NULL)
         goto error;
 
@@ -4167,7 +4167,7 @@ int fa_as_regexp(struct fa *fa, char **regexp, size_t *regexp_len) {
         }
     }
 
-    ini = add_state(fa, 0);
+    ini = fa_add_state(fa, 0);
     if (ini == NULL)
         goto error;
 
@@ -4435,9 +4435,9 @@ static void print_char(FILE *out, uchar c) {
     }
 }
 
-void fa_dot(FILE *out, struct fa *fa) {
+void fa_dot(FILE *out, const struct fa *fa) {
     fprintf(out, "digraph {\n  rankdir=LR;");
-    list_for_each(s, fa->initial) {
+    list_for_each_const(s, fa->initial) {
         if (s->accept) {
             fprintf(out, "\"%p\" [shape=doublecircle];\n", s);
         } else {
@@ -4449,7 +4449,7 @@ void fa_dot(FILE *out, struct fa *fa) {
 
     struct re_str str;
     MEMZERO(&str, 1);
-    list_for_each(s, fa->initial) {
+    list_for_each_const(s, fa->initial) {
         for_each_trans(t, s) {
             fprintf(out, "\"%p\" -> \"%p\" [ label = \"", s, t->to);
             if (fa->trans_re) {
@@ -4482,7 +4482,6 @@ int fa_json(FILE *out, struct fa *fa) {
     fprintf(out,"{\n\t\"final\": [");
 
     F(ALLOC_N(list_hashes, list_size));
-
     list_for_each(s, fa->initial) {
         if (num_states == list_size - 1){
             list_size += list_size;
@@ -4539,28 +4538,28 @@ error:
     return result;
 }
 
-bool fa_is_deterministic(struct fa *fa) {
+bool fa_is_deterministic(const struct fa *const fa) {
     return fa->deterministic;
 }
 
-const struct state *fa_state_initial(const struct fa *fa) {
+const struct state *fa_state_initial(const struct fa *const fa) {
     return fa->initial;
 }
 
-bool fa_state_is_accepting(const struct state *st) {
+bool fa_state_is_accepting(const struct state *const st) {
     return st->accept;
 }
 
-const struct state* fa_state_next(const struct state *st) {
+const struct state* fa_state_next(const struct state *const st) {
     return st->next;
 }
 
-size_t fa_state_num_trans(const struct state *st) {
+size_t fa_state_num_trans(const struct state *const st) {
     return st->tused;
 }
 
-int fa_state_trans(const struct state *st, size_t i,
-                   const struct state **to, unsigned char *min, unsigned char *max) {
+int fa_state_trans(const struct state *const st, size_t i,
+                   const struct state **const to, unsigned char *min, unsigned char *max) {
     if (st->tused <= i)
         return -1;
 
