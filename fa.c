@@ -97,6 +97,61 @@ static void bitset_negate(bitset *bs, size_t nbits) {
         bs[i] = ~ bs[i];
 }
 
+/* The type of a state of a finite automaton. The fa_state functions return
+ * pointers to this struct. Those pointers are only valid as long as the
+ * only fa_* functions that are called are fa_state_* functions. For
+ * example, the following code will almost certainly result in a crash (or
+ * worse):
+ *
+ *     struct state *s = fa_state_initial(fa);
+ *     fa_minimize(fa);
+ *     // Crashes as S will likely have been freed
+ *     s = fa_state_next(s)
+ */
+struct state;
+
+struct fa {
+    struct state *initial;
+    int           deterministic : 1;
+    int           minimal : 1;
+    uint          nocase : 1;
+    int           trans_re : 1;
+};
+
+struct re;
+
+/* A transition. If the input has a character in the inclusive
+ * range [MIN, MAX], move to TO
+ */
+struct trans {
+    struct state *to;
+    union {
+        struct {
+            uchar         min;
+            uchar         max;
+        };
+        struct re *re;
+    };
+};
+
+
+/* A state in a finite automaton. Transitions are never shared between
+   states so that we can free the list when we need to free the state */
+struct state {
+    struct state *next;
+    hash_val_t    hash;
+    uint          accept : 1;
+    uint          live : 1;
+    uint          reachable : 1;
+    uint          visited : 1;   /* Used in various places to track progress */
+    /* Array of transitions. The TUSED first entries are used, the array
+       has allocated room for TSIZE */
+    size_t        tused;
+    size_t        tsize;
+    struct trans *trans;
+};
+
+
 /*
  * Representation of a parsed regular expression. The regular expression is
  * parsed according to the following grammar by PARSE_REGEXP:
@@ -391,7 +446,7 @@ struct state *fa_add_state(struct fa *fa, int accept) {
          t++)
 
 ATTRIBUTE_RETURN_CHECK
-static int add_new_trans(struct state *from, struct state *to,
+int fa_add_new_trans(struct state *from, struct state *to,
                          uchar min, uchar max) {
     assert(to != NULL);
 
@@ -420,7 +475,7 @@ static int add_epsilon_trans(struct state *from,
     int r;
     from->accept |= to->accept;
     for_each_trans(t, to) {
-        r = add_new_trans(from, t->to, t->min, t->max);
+        r = fa_add_new_trans(from, t->to, t->min, t->max);
         if (r < 0)
             return -1;
     }
@@ -933,7 +988,7 @@ static struct state_set *fa_reverse(struct fa *fa) {
         struct trans *t = all->data[i];
         s->accept = 0;
         for (int j=0; j < tused[i]; j++) {
-            r = add_new_trans(t[j].to, s, t[j].min, t[j].max);
+            r = fa_add_new_trans(t[j].to, s, t[j].min, t[j].max);
             if (r < 0)
                 goto error;
         }
@@ -1300,7 +1355,7 @@ static int determinize(struct fa *fa, struct state_set *ini) {
             uchar max = UCHAR_MAX;
             if (n+1 < npoints)
                 max = points[n+1] - 1;
-            if (add_new_trans(r, q, min, max) < 0)
+            if (fa_add_new_trans(r, q, min, max) < 0)
                 goto error;
         }
     }
@@ -1637,7 +1692,7 @@ static int minimize_hopcroft(struct fa *fa) {
         for_each_trans(t, states->states[nsnum[n]]) {
             int toind = state_set_index(states, t->to);
             struct state *nto = newstates->states[nsind[toind]];
-            F(add_new_trans(s, nto, t->min, t->max));
+            F(fa_add_new_trans(s, nto, t->min, t->max));
         }
     }
 
@@ -1778,7 +1833,7 @@ static struct fa *fa_make_char(uchar c) {
     if (t == NULL)
         goto error;
 
-    r = add_new_trans(s, t, c, c);
+    r = fa_add_new_trans(s, t, c, c);
     if (r < 0)
         goto error;
     fa->deterministic = 1;
@@ -1798,7 +1853,7 @@ struct fa *fa_make_basic(unsigned int basic) {
         return fa_make_epsilon();
     } else if (basic == FA_TOTAL) {
         struct fa *fa = fa_make_epsilon();
-        r = add_new_trans(fa->initial, fa->initial, UCHAR_MIN, UCHAR_MAX);
+        r = fa_add_new_trans(fa->initial, fa->initial, UCHAR_MIN, UCHAR_MAX);
         if (r < 0) {
             fa_free(fa);
             fa = NULL;
@@ -1868,7 +1923,7 @@ static struct fa *fa_clone(struct fa *fa) {
             int to = state_set_index(set, t->to);
             assert(to >= 0);
             struct state *toc = set->data[to];
-            r = add_new_trans(sc, toc, t->min, t->max);
+            r = fa_add_new_trans(sc, toc, t->min, t->max);
             if (r < 0)
                 goto error;
         }
@@ -1998,7 +2053,7 @@ static struct fa *fa_make_char_set(const bitset *cset, int negate) {
         int to = from;
         while (to < UCHAR_MAX && (bitset_get(cset, to + 1) == !negate))
             to += 1;
-        r = add_new_trans(s, t, from, to);
+        r = fa_add_new_trans(s, t, from, to);
         if (r < 0)
             goto error;
         from = to + 1;
@@ -2224,7 +2279,7 @@ struct fa *fa_intersect(struct fa *fa1, struct fa *fa2) {
                         ? t1[n1].min : t2[n2].min;
                     char max = t1[n1].max < t2[n2].max
                         ? t1[n1].max : t2[n2].max;
-                    ret = add_new_trans(s, r, min, max);
+                    ret = fa_add_new_trans(s, r, min, max);
                     if (ret < 0)
                         goto error;
                 }
@@ -2320,23 +2375,23 @@ static int add_crash_trans(const struct fa *fa, struct state *s, struct state *c
     if (fa->nocase) {
         /* Never transition on anything in [A-Z] */
         if (min > 'Z' || max < 'A') {
-            result = add_new_trans(s, crash, min, max);
+            result = fa_add_new_trans(s, crash, min, max);
         } else if (min >= 'A' && max <= 'Z') {
             result = 0;
         } else if (max <= 'Z') {
             /* min < 'A' */
-            result = add_new_trans(s, crash, min, 'A' - 1);
+            result = fa_add_new_trans(s, crash, min, 'A' - 1);
         } else if (min >= 'A') {
             /* max > 'Z' */
-            result = add_new_trans(s, crash, 'Z' + 1, max);
+            result = fa_add_new_trans(s, crash, 'Z' + 1, max);
         } else {
             /* min < 'A' && max > 'Z' */
-            result = add_new_trans(s, crash, min, 'A' - 1);
+            result = fa_add_new_trans(s, crash, min, 'A' - 1);
             if (result == 0)
-                result = add_new_trans(s, crash, 'Z' + 1, max);
+                result = fa_add_new_trans(s, crash, 'Z' + 1, max);
         }
     } else {
-        result = add_new_trans(s, crash, min, max);
+        result = fa_add_new_trans(s, crash, min, max);
     }
     return result;
 }
@@ -2738,15 +2793,15 @@ static struct fa *expand_alphabet(struct fa *fa, int add_marker,
         r->tsize = p->tsize;
         p->trans = NULL;
         p->tused = p->tsize = 0;
-        ret = add_new_trans(p, r, X, X);
+        ret = fa_add_new_trans(p, r, X, X);
         if (ret < 0)
             goto error;
         if (add_marker) {
             struct state *q = fa_add_state(fa, 0);
-            ret = add_new_trans(p, q, Y, Y);
+            ret = fa_add_new_trans(p, q, Y, Y);
             if (ret < 0)
                 goto error;
-            ret = add_new_trans(q, p, X, X);
+            ret = fa_add_new_trans(q, p, X, X);
             if (ret < 0)
                 goto error;
         }
@@ -3114,16 +3169,16 @@ int fa_nocase(struct fa *fa) {
             } else if (t->max <= 'Z') {
                 /* t->min < 'A' */
                 t->max = 'A' - 1;
-                F(add_new_trans(s, t->to, lc_min, lc_max));
+                F(fa_add_new_trans(s, t->to, lc_min, lc_max));
             } else if (t->min >= 'A') {
                 /* t->max > 'Z' */
                 t->min = 'Z' + 1;
-                F(add_new_trans(s, t->to, lc_min, lc_max));
+                F(fa_add_new_trans(s, t->to, lc_min, lc_max));
             } else {
                 /* t->min < 'A' && t->max > 'Z' */
-                F(add_new_trans(s, t->to, 'Z' + 1, t->max));
+                F(fa_add_new_trans(s, t->to, 'Z' + 1, t->max));
                 s->trans[i].max = 'A' - 1;
-                F(add_new_trans(s, s->trans[i].to, lc_min, lc_max));
+                F(fa_add_new_trans(s, s->trans[i].to, lc_min, lc_max));
             }
         }
     }
@@ -3156,7 +3211,7 @@ static int case_expand(struct fa *fa) {
 
             if (t->min > 'z' || t->max < 'a')
                 continue;
-            F(add_new_trans(s, t->to, lc_min, lc_max));
+            F(fa_add_new_trans(s, t->to, lc_min, lc_max));
         }
     }
     F(collect(fa));
@@ -3972,7 +4027,7 @@ ATTRIBUTE_RETURN_CHECK
 static int add_new_re_trans(struct state *s1, struct state *s2,
                             struct re *re) {
     int r;
-    r = add_new_trans(s1, s2, 0, 0);
+    r = fa_add_new_trans(s1, s2, 0, 0);
     if (r < 0)
         return -1;
     last_trans(s1)->re = re;
@@ -4538,28 +4593,28 @@ error:
     return result;
 }
 
-bool fa_is_deterministic(const struct fa *const fa) {
+bool fa_is_deterministic(const struct fa *fa) {
     return fa->deterministic;
 }
 
-const struct state *fa_state_initial(const struct fa *const fa) {
+struct state *fa_state_initial(const struct fa *fa) {
     return fa->initial;
 }
 
-bool fa_state_is_accepting(const struct state *const st) {
+bool fa_state_is_accepting(const struct state *st) {
     return st->accept;
 }
 
-const struct state* fa_state_next(const struct state *const st) {
+struct state* fa_state_next(const struct state *st) {
     return st->next;
 }
 
-size_t fa_state_num_trans(const struct state *const st) {
+size_t fa_state_num_trans(const struct state *st) {
     return st->tused;
 }
 
-int fa_state_trans(const struct state *const st, size_t i,
-                   const struct state **const to, unsigned char *min, unsigned char *max) {
+int fa_state_trans(const struct state *st, size_t i,
+                   struct state **to, unsigned char *min, unsigned char *max) {
     if (st->tused <= i)
         return -1;
 

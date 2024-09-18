@@ -30,64 +30,8 @@
 #include <stdint.h>
 
 
-typedef unsigned long hash_val_t;
-typedef unsigned int bitset;
-typedef unsigned char uchar;
-
-/* The type of a state of a finite automaton. The fa_state functions return
- * pointers to this struct. Those pointers are only valid as long as the
- * only fa_* functions that are called are fa_state_* functions. For
- * example, the following code will almost certainly result in a crash (or
- * worse):
- *
- *     struct state *s = fa_state_initial(fa);
- *     fa_minimize(fa);
- *     // Crashes as S will likely have been freed
- *     s = fa_state_next(s)
- */
+struct fa;
 struct state;
-
-struct fa {
-    struct state *initial;
-    int           deterministic : 1;
-    int           minimal : 1;
-    unsigned int  nocase : 1;
-    int           trans_re : 1;
-};
-
-struct re;
-
-/* A transition. If the input has a character in the inclusive
- * range [MIN, MAX], move to TO
- */
-struct trans {
-    struct state *to;
-    union {
-        struct {
-            uchar         min;
-            uchar         max;
-        };
-        struct re *re;
-    };
-};
-
-
-/* A state in a finite automaton. Transitions are never shared between
-   states so that we can free the list when we need to free the state */
-struct state {
-    struct state *next;
-    hash_val_t    hash;
-    unsigned int  accept : 1;
-    unsigned int  live : 1;
-    unsigned int  reachable : 1;
-    unsigned int  visited : 1;   /* Used in various places to track progress */
-    /* Array of transitions. The TUSED first entries are used, the array
-       has allocated room for TSIZE */
-    size_t        tused;
-    size_t        tsize;
-    struct trans *trans;
-};
-
 
 
 /* Denote some basic automata, used by fa_is_basic and fa_make_basic */
@@ -179,6 +123,12 @@ struct fa *fa_minus(struct fa *fa1, struct fa *fa2);
  * New exposed interface for customization
  */
 struct state *fa_add_state(struct fa *fa, int accept);
+
+/* add transition to fa
+ * New exposed interface for customization
+ */
+int fa_add_new_trans(struct state *from, struct state *to,
+                     unsigned char min, unsigned char max);
 
 /* Return a finite automaton that accepts a repetition of the language that
  * FA accepts. If MAX == -1, the returned automaton accepts arbitrarily
@@ -347,13 +297,13 @@ int fa_json(FILE *out, struct fa *fa);
 bool fa_is_deterministic(const struct fa *fa);
 
 /* Return the initial state */
-const struct state *fa_state_initial(const struct fa *fa);
+struct state *fa_state_initial(const struct fa *fa);
 
 /* Return true if this is an accepting state */
 bool fa_state_is_accepting(const struct state *st);
 
 /* Return the next state; return NULL if there are no more states */
-const struct state* fa_state_next(const struct state *st);
+struct state* fa_state_next(const struct state *st);
 
 /* Return the number of transitions for a state */
 size_t fa_state_num_trans(const struct state *st);
@@ -369,7 +319,7 @@ size_t fa_state_num_trans(const struct state *st);
  * transitions of ST.
  */
 int fa_state_trans(const struct state *st, size_t i,
-                   const struct state **to, unsigned char *min, unsigned char *max);
+                   struct state **to, unsigned char *min, unsigned char *max);
 
 #endif
 
