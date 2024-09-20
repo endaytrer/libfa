@@ -83,6 +83,10 @@ int fa_compile(const char *re, size_t size, struct fa **fa);
  */
 struct fa *fa_make_basic(unsigned int basic);
 
+/* Clone fa.
+ */
+struct fa *fa_clone(const struct fa *fa);
+
 /* Return 1 if FA accepts the basic language BASIC, which must be one of
  * the constants from enum FA_BASIC.
  */

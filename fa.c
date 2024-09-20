@@ -1894,7 +1894,7 @@ int fa_is_basic(const struct fa *fa, unsigned int basic) {
     return 0;
 }
 
-static struct fa *fa_clone(struct fa *fa) {
+struct fa *fa_clone(const struct fa *fa) {
     struct fa *result = NULL;
     struct state_set *set = state_set_init(-1, S_DATA|S_SORTED);
     int r;
@@ -1905,8 +1905,8 @@ static struct fa *fa_clone(struct fa *fa) {
     result->deterministic = fa->deterministic;
     result->minimal = fa->minimal;
     result->nocase = fa->nocase;
-    list_for_each(s, fa->initial) {
-        int i = state_set_push(set, s);
+    list_for_each_const(s, fa->initial) {
+        int i = state_set_push(set, (struct state *)s);
         E(i < 0);
 
         struct state *q = fa_add_state(result, s->accept);
