@@ -3397,7 +3397,7 @@ static struct re *parse_simple_exp(struct re_parse *parse) {
             parse->error = REG_ESPACE;
             goto error;
         }
-        add_re_char(re, '\n', '\n');
+        // add_re_char(re, '\n', '\n');
     } else if (more(parse)) {
         char c;
         if (!parse_char(parse, 1, &c)) {
@@ -3714,8 +3714,9 @@ static int re_cset_as_string(const struct re *re, struct re_str *str) {
     const uchar nul = '\0';
 
     static const char *const empty_set = "[]";
-    static const char *const total_set = "(.|\n)";
-    static const char *const not_newline = ".";
+    // static const char *const total_set = "(.|\n)";
+    static const char *const total_set = ".";
+    // static const char *const not_newline = ".";
 
     char *s;
     int from, to, negate;
@@ -3739,16 +3740,16 @@ static int re_cset_as_string(const struct re *re, struct re_str *str) {
             str->rx = strdup(total_set);
             goto done;
         }
-        if (from == '\n') {
-            for (from += 1;
-                 from <= UCHAR_MAX && cset_contains(re, from);
-                 from += 1);
-            if (from > UCHAR_MAX) {
-                /* Special case: the set matches everything but '\n' */
-                str->rx = strdup(not_newline);
-                goto done;
-            }
-        }
+        // if (from == '\n') {
+        //     for (from += 1;
+        //          from <= UCHAR_MAX && cset_contains(re, from);
+        //          from += 1);
+        //     if (from > UCHAR_MAX) {
+        //         /* Special case: the set matches everything but '\n' */
+        //         str->rx = strdup(not_newline);
+        //         goto done;
+        //     }
+        // }
     }
 
     /* See if ']' and '-' will be explicitly included in the character set

@@ -10,5 +10,8 @@ add_library(fa SHARED fa.c hash.c memory.c ref.c
 
 set_target_properties(fa PROPERTIES PUBLIC_HEADER include/fa.h)
 
+add_executable(fa_test fa_test.c)
+
+target_link_libraries(fa_test PRIVATE fa)
 
 install(TARGETS fa PUBLIC_HEADER)
