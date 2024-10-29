@@ -1374,6 +1374,13 @@ static int determinize(struct fa *fa, struct state_set *ini) {
 }
 
 /*
+ * public determinization wrapper
+ */
+int fa_determinize(struct fa *fa) {
+    determinize(fa, NULL);
+}
+
+/*
  * Minimization. As a sideeffect of minimization, the transitions are
  * reduced and ordered.
  */

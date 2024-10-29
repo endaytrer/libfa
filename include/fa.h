@@ -98,6 +98,12 @@ int fa_is_basic(const struct fa *fa, unsigned int basic);
  */
 int fa_minimize(struct fa *fa);
 
+/*
+ * Make a finite automaton deterministic. This also eliminates dead states
+ * and transitions and reduces and orders the transitions for each state
+ */
+int fa_determinize(struct fa *fa);
+
 /* Return a finite automaton that accepts the concatenation of the
  * languages for FA1 and FA2, i.e. L(FA1).L(FA2)
  */
